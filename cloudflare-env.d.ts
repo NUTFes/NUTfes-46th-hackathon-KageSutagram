@@ -1,4 +1,8 @@
 interface CloudflareEnv {
+  SLACK_CLIENT_ID?: string;
+  SLACK_CLIENT_SECRET?: string;
+  SLACK_TEAM_ID?: string;
+  APP_BASE_URL?: string;
   DB: D1Database;
   IMAGES: R2Bucket;
   SESSION_SECRET?: string;

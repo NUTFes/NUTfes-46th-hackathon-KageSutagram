@@ -6,6 +6,7 @@ if (process.env.NODE_ENV === "development") {
 }
 
 const config: NextConfig = {
+  devIndicators: false,
   // Cloudflare のバインディングはリクエストごとに取得する。
   serverExternalPackages: ["@opennextjs/cloudflare"],
 };
