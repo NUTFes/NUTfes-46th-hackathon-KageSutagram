@@ -1,4 +1,5 @@
 import { handleSlackAuth } from "./slack-auth";
+import { qrBaseUrl } from "./app-origin";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import {
   canUseDevLogin,
@@ -257,6 +258,11 @@ async function handle(req: Request): Promise<Response> {
       remaining: Math.max(0, 10 - (await usage())),
       period: state,
       offline: !env.GEMINI_API_KEY,
+      dev_login_enabled: canUseDevLogin(
+        process.env.NODE_ENV,
+        env.APP_ENV,
+        env.DEV_LOGIN,
+      ),
     });
   }
   if (path[0] === "images" && method === "GET") {
@@ -653,7 +659,7 @@ async function handle(req: Request): Promise<Response> {
     }
     if (path[1] === "qr" && method === "GET") {
       return json({
-        base_url: env.APP_BASE_URL || url.origin,
+        base_url: qrBaseUrl(env.APP_BASE_URL, url.origin),
         places: await all("SELECT id,name FROM places WHERE is_active=1"),
       });
     }

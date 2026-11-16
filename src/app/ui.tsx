@@ -3,13 +3,18 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import QRCode from "qrcode";
-import { motion } from "framer-motion";
+import { motion, MotionConfig } from "framer-motion";
+import { parseAppOrigin } from "@/lib/app-origin";
 import { topics, hashtags } from "@/lib/domain";
 import { resize, imageHash, kageFilter } from "@/lib/canvas";
 type Row = Record<string, any>;
 function KiraScore({ score }: { score: number }) {
   const [count, setCount] = useState(0);
   useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setCount(score);
+      return;
+    }
     let frame = 0;
     const start = performance.now();
     const tick = (now: number) => {
@@ -91,8 +96,16 @@ function PrintableQR({ data }: { data: Row }) {
   const [error, setError] = useState("");
   useEffect(() => {
     let active = true;
+    setCodes([]);
+    setError("");
     if (!data.base_url) return;
-    const base = new URL(data.base_url).origin;
+    let base: string;
+    try {
+      base = parseAppOrigin(data.base_url);
+    } catch {
+      setError("QRコードのURLが不正です。運営にお問い合わせください。");
+      return;
+    }
     Promise.all(
       [
         { name: "陰スタグラム", path: "/" },
@@ -152,6 +165,13 @@ function timeAgo(value: string) {
 // 写真は端末のメモリだけに保持し、画面遷移後も判定結果を引き継ぐ。
 let postDraft: { original: Blob; filtered: Blob; judge: Row } | null = null;
 export default function App() {
+  return (
+    <MotionConfig reducedMotion="user">
+      <AppContent />
+    </MotionConfig>
+  );
+}
+function AppContent() {
   const pathname = usePathname();
   const params = useSearchParams();
   const router = useRouter();
@@ -986,9 +1006,11 @@ export default function App() {
                         : "Slackログインを確認できませんでした。もう一度お試しください。"}
                   </p>
                 )}
-                <form action="/api/auth/dev-login" method="post">
-                  <button>開発ログイン</button>
-                </form>
+                {me?.dev_login_enabled === true && (
+                  <form action="/api/auth/dev-login" method="post">
+                    <button>開発ログイン</button>
+                  </form>
+                )}
                 <a href="/api/auth/slack/login">Slackでログイン</a>
               </>
             )}
@@ -1185,22 +1207,28 @@ export default function App() {
           ["/map", "◎", "マップ"],
           ["/post", "＋", "投稿"],
           ["/me", "◐", "自分"],
-        ].map(([href, icon, label]) => (
-          <Link
-            key={href}
-            href={href}
-            className={href === "/post" ? "nav-post" : ""}
-            aria-current={
-              (href === "/" ? pathname === "/" : pathname.startsWith(href))
-                ? "page"
-                : undefined
-            }
-            aria-disabled={href === "/post" && !!me && !me.period.open}
-          >
-            <span aria-hidden="true">{icon}</span>
-            {label}
-          </Link>
-        ))}
+        ].map(([href, icon, label]) =>
+          href === "/post" && !!me && !me.period.open ? (
+            <span key={href} className="nav-post" aria-disabled="true">
+              <span aria-hidden="true">{icon}</span>
+              {label}
+            </span>
+          ) : (
+            <Link
+              key={href}
+              href={href}
+              className={href === "/post" ? "nav-post" : ""}
+              aria-current={
+                (href === "/" ? pathname === "/" : pathname.startsWith(href))
+                  ? "page"
+                  : undefined
+              }
+            >
+              <span aria-hidden="true">{icon}</span>
+              {label}
+            </Link>
+          ),
+        )}
       </nav>
     </>
   );

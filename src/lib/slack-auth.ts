@@ -93,10 +93,8 @@ export async function handleSlackAuth(request: Request, env: CloudflareEnv) {
       .bind(profile.slack_user_id)
       .first<{ id: string; is_active: number }>();
     if (!member?.is_active) {
-      // IDは署名済みトークンを検証した後にのみ画面へ渡す。
-      return go(
-        `/admin/login?error=unregistered&slack_user_id=${encodeURIComponent(profile.slack_user_id)}`,
-      );
+      // SlackのユーザーIDをリダイレクト先のURLに含めない。
+      return go("/admin/login?error=unregistered");
     }
     const sessionId = crypto.randomUUID();
     const old = await verifySession(jar.get(SESSION_COOKIE)?.value, secret);

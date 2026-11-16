@@ -217,7 +217,7 @@ describe("Slack callback と登録待ち", () => {
         calls.some((c) => c.query.startsWith("INSERT INTO sessions")),
       ).toBe(true);
     } else {
-      expect(r.headers.get("location")).toContain("slack_user_id=U123TEST");
+      expect(r.headers.get("location")).toBe("/admin/login?error=unregistered");
       expect(jar.has("kage_session")).toBe(false);
       expect(DB.batch).not.toHaveBeenCalled();
     }

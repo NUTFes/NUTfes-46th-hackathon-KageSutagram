@@ -6,11 +6,12 @@
   --surface-2: #2e343c;
   --ink: #e3e6ea;
   --muted: #8a939e;
+  --muted-on-surface-2: #9aa3ad;
   --line: #3a414a;
   --mint: #7fa7a3;
-  --mint-deep: #4f6e6b;
+  --mint-deep: #4d6c69;
   --kira: #c9b26b;
-  --heart: #b0707e;
+  --heart: #c98a97;
   --crowd: #c0605a;
   --soldout: #6e7681;
 }
@@ -174,9 +175,13 @@ small {
   background: var(--surface-2);
   padding: 12px;
   border-radius: 8px;
-  font-size: 11px;
-  color: var(--muted);
+  font-size: 12px;
+  color: var(--muted-on-surface-2);
   margin: 14px 0;
+}
+.notice .muted,
+.situation .muted {
+  color: inherit;
 }
 .situation h2 {
   color: var(--ink);
@@ -428,7 +433,8 @@ nav {
   z-index: 30;
   gap: 0;
 }
-.bottom a {
+.bottom a,
+.bottom > span[aria-disabled="true"] {
   font-size: 10px;
   color: var(--muted);
   text-decoration: none;
@@ -440,7 +446,8 @@ nav {
   justify-content: center;
   line-height: 1.4;
 }
-.bottom a > span {
+.bottom a > span,
+.bottom > span[aria-disabled="true"] > span {
   font-size: 23px;
 }
 .bottom a[aria-current="page"] {
@@ -453,7 +460,6 @@ nav {
 }
 .bottom [aria-disabled="true"] {
   opacity: 0.4;
-  pointer-events: none;
 }
 footer {
   padding-bottom: 110px;
@@ -520,7 +526,7 @@ summary {
   opacity: 0.45;
 }
 .situation .stale {
-  opacity: 0.5;
+  opacity: 1;
 }
 .dot {
   display: inline-block;
