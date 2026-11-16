@@ -56,6 +56,7 @@ export function period(start: string, end: string, now = new Date()) {
       .toISOString()
       .slice(0, 10);
   return {
+    before: day < start,
     open: day >= start && day <= add(7),
     purged: day >= add(30),
     post_deadline: add(7),

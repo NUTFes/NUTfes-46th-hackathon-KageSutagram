@@ -67,7 +67,7 @@ export function safeReturnTo(value: unknown) {
     value.startsWith("//") ||
     /[\\\r\n\u0000-\u001f]/.test(value)
   )
-    return "/tips/new";
+    return "/admin/reports";
   return value;
 }
 export function canUseDevLogin(

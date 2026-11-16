@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import "@fontsource/biz-udpgothic/400.css";
+import "@fontsource/biz-udpgothic/700.css";
 import "./globals.css";
 export const metadata: Metadata = {
   title: "陰スタグラム",

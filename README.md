@@ -1,6 +1,6 @@
 # 陰スタグラム（KageSutagram）
 
-技大祭期間限定の写真SNSです。詳細設計10章の手順1〜5を実装しています。日本語UI、スマートフォン向けの灰青色の画面です。設計書の複製は `docs/01-requirements.md`〜`03-detailed-design.md` にあります。
+技大祭期間限定の写真SNSです。詳細設計10章の手順1〜5を実装しています。日本語UI、スマートフォン向けの落ち着いたダーク配色と、同梱したBIZ UDPGothicを使用します。設計書の複製は `docs/01-requirements.md`〜`03-detailed-design.md` にあります。
 
 ## セットアップ
 
@@ -18,7 +18,7 @@ pnpm build
 pnpm dev --port 3300
 ```
 
-http://localhost:3300 で利用できます。公開閲覧・写真投稿にログインは不要です。運営は `/admin/login` の「開発ログイン」を使います。Slack OIDC は501を返すスタブです。
+http://localhost:3300 で利用できます。公開閲覧・写真投稿にログインは不要です。運営は `/admin/login` の「開発ログイン」を使います。Slack OIDC は `inshu/src` の検証済み実装を移植しています。
 
 この環境で pnpm が PATH にない場合、`pnpm` を `& ../.tools/node_modules/.bin/pnpm.cmd` に置き換えます。OSのユーザー情報取得が失敗する制限付きWindows環境では、上のコマンドの前に以下を実行してください。ユーザーの設定ファイルは変更しません。
 
@@ -34,16 +34,19 @@ D1 `DB` とR2 `IMAGES` のローカルデータは `.wrangler/state/v3/` に保�
 
 ## 環境変数
 
-| 変数 | 用途 |
-|---|---|
-| `DEV_LOGIN` | 開発用ログインは `1`。さらに `APP_ENV=local` と `NODE_ENV=development` が必要 |
-| `APP_ENV` | ローカルは `local`、Worker設定の既定値は `production` |
-| `SESSION_SECRET` | 運営CookieのHMAC署名。32文字以上 |
-| `DEVICE_ID_SECRET` | 端末IDから公開IDを作るHMAC鍵。32文字以上。運用途中の変更は公開IDの継続性に影響する |
-| `GEMINI_API_KEY` | 未設定なら外部送信しないオフラインモード |
-| `GEMINI_MODEL` | 判定モデル。既定値 `gemini-2.5-flash` |
-| `STATUS_FRESH_MIN` | 状況を通常表示する分数。既定値30 |
-| `STATUS_STALE_MIN` | 状況を地図から外す分数。既定値120 |
+| 変数                                      | 用途                                                                                                            |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `DEV_LOGIN`                               | 開発用ログインは `1`。さらに `APP_ENV=local` と `NODE_ENV=development` が必要                                   |
+| `APP_ENV`                                 | ローカルは `local`、Worker設定の既定値は `production`                                                           |
+| `SESSION_SECRET`                          | 運営CookieのHMAC署名。32文字以上                                                                                |
+| `DEVICE_ID_SECRET`                        | 端末IDから公開IDを作るHMAC鍵。32文字以上。運用途中の変更は公開IDの継続性に影響する                              |
+| `GEMINI_API_KEY`                          | 未設定なら外部送信しないオフラインモード                                                                        |
+| `GEMINI_MODEL`                            | 判定モデル。既定値 `gemini-2.5-flash`                                                                           |
+| `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` | SlackアプリのOIDCクライアント情報                                                                               |
+| `SLACK_TEAM_ID`                           | 許可するSlackワークスペースのチームID                                                                           |
+| `APP_BASE_URL`                            | サイトの公開オリジン。例 `https://kage.example.com`。OIDCコールバックと印刷用QRに使用。パス・末尾スラッシュなし |
+| `STATUS_FRESH_MIN`                        | 状況を通常表示する分数。既定値30                                                                                |
+| `STATUS_STALE_MIN`                        | 状況を地図から外す分数。既定値120                                                                               |
 
 `.dev.vars.example` の鍵はローカル用の例です。実運用では別の秘密を設定します。リモートCloudflare・Slack・GitHub・実Geminiとの疎通やデプロイは今回行っていません。
 
@@ -75,7 +78,7 @@ pnpm build:worker
 
 ## 検証
 
-`pnpm test` はフィルターの数式、人気度、鮮度、タグ、本人へのハート数非表示（API含む）、通報閾値、トークン、JST期間・日次上限、Gemini JSON、Cronの削除順と失敗時の再試行を検証します。
+`pnpm test` はSlack OIDCのRSA署名・JWKS・claim・state/nonce・期限・チーム・未登録/無効な運営拒否・セッション発行、およびフィルターの数式、人気度、鮮度、タグ、本人へのハート数非表示（API含む）、通報閾値、トークン、JST期間・日次上限、Gemini JSON、Cronの削除順と失敗時の再試行を検証します。
 
 開発サーバーを3300番で起動し、別ターミナルで以下を実行します。
 
@@ -85,8 +88,24 @@ node scripts/smoke.cjs
 pnpm exec tsx scripts/verify-limits.ts
 ```
 
-`smoke.cjs` はリポジトリ内のplaywright-coreとインストール済みChromeを使い、生成写真で判定→陰化→投稿、別端末のハート・返信、タグ・場所・ユーザー、通報によるheld、運営の復帰・マップ・場所・期間、本人削除まで確認します。390px幅の横はみ出しとブラウザ例外も確認します。検証画像は `.wrangler/verification/` に保存します。`KAGE_URL` と `CHROME_PATH` で接続先とChromeを変更できます。スモークで登録した架空の場所やマップ・返信・通報はローカルに残ります。
+`smoke.cjs` はリポジトリ内のplaywright-coreとインストール済みChromeを使い、生成写真で判定→陰化→投稿、別端末のハート・返信、タグ・場所・ユーザー、通報によるheld、運営の復帰・マップ・場所・期間、本人削除まで確認します。375px幅の横はみ出しとブラウザ例外、初回トップアクセス時の端末生成、印刷用QR全件の独立デコーダー（jsQR）によるURL読み取り、期間前・受付終了・全削除後の表示（レスポンス差し替え）も確認します。検証画像は `.wrangler/verification/` に保存します。`KAGE_URL` と `CHROME_PATH` で接続先とChromeを変更できます。スモークで登録した架空の場所やマップ・返信・通報はローカルに残ります。
 
 `verify-limits.ts` は実DB/APIで判定レート、期限・寸法・単回トークン、同時投稿時の上限、期間外403を確認します。検証用の投稿・トークン・使用記録は削除し、開催設定を元に戻します。
 
 整形は `pnpm exec prettier --write src scripts tests`。D1のトリガーは `drizzle/0001_integrity.sql` にあり、ハート・返信・通報の件数、判定トークンの消費と日次加算を更新します。
+
+## Slack運営ログイン
+
+SlackアプリにはOIDCのリダイレクトURL `{APP_BASE_URL}/api/auth/slack/callback` を登録します。スコープは `openid profile email` です。上記4変数と32文字以上の `SESSION_SECRET` を設定してください。HTTPSが必須で、ローカル開発のlocalhost/127.0.0.1のみHTTPを許可します。
+
+ログインは `/admin/login` → `/api/auth/slack/login` から開始します。10分の署名付きHttpOnly Cookieでstate/nonceを保持し、SlackのJWKSでIDトークンのRSA署名、issuer/audience、有効期限、チームを検証します。Cookieはコールバックで消費します。`admins.slack_user_id` に登録済みで `is_active=1` の運営だけがログインできます。シードのFAKE_ADMINは実Slackには使えません。運営登録は既存adminsテーブルを管理者が設定します。無効/未登録のアカウントは自動登録しません。認証後は既存セッションを破棄し、署名Cookie＋D1セッションを発行します。未設定・認証失敗・未登録は日本語の案内付きログイン画面へ戻ります。開発ログインの制約は従来どおりです。
+
+テストは鍵をローカル生成してSlack応答をモックします。実Slack・実Gemini・リモートCloudflareには接続していません。
+
+## QRの印刷とデザイン検証
+
+運営ログイン後、`/admin/qr` でトップと公開中の全場所（`/places/{id}`）のQRを生成します。「印刷する」でA4・2列の切り取り枠付きレイアウトになります。QR生成はブラウザ内で完結し、外部QRサービスへURLを送りません。配布する前に `APP_BASE_URL` を公開URLへ設定してください。未設定時はアクセスしたサイトのオリジンを使用します。
+
+配色はTask 08のトークンを使用し、16px余白、投稿カード、選択チップ、カメラロゴ、下部ナビ、地図の状況ピンとシートを適用しています。ピンの見た目は18px、操作領域は44pxです。古い状況は薄く表示し、おすすめ/穴場はmint、売り切れはsoldout、混雑はcrowdです。投稿画面では場所・情報の種類をチップで選べます。結果は加工前（端末内のみ）と加工後を並べ、約1.2秒で彩度と粒子が変化します。
+
+スモークが `.wrangler/verification/S-01-timeline-375.png`、`S-02-post-375.png`、`S-03-result-375.png`、`S-05-map-375.png`、`S-06-place-375.png` と `admin-qr-print.png` を保存します。

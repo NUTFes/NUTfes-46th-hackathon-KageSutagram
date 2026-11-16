@@ -1,3 +1,5 @@
+import { handleSlackAuth } from "./slack-auth";
+import { qrBaseUrl } from "./app-origin";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import {
   canUseDevLogin,
@@ -208,13 +210,12 @@ async function handle(req: Request): Promise<Response> {
       await run("INSERT INTO hashtags VALUES (?,?,?,?)", tag, post, reply, now);
   }
   if (path[0] === "auth") {
-    if (path[1] === "slack")
-      return json(
-        {
-          error: { code: "not_implemented", message: "Slack OIDCは準備中です" },
-        },
-        501,
-      );
+    if (
+      path[1] === "slack" &&
+      method === "GET" &&
+      ["login", "callback"].includes(path[2])
+    )
+      return handleSlackAuth(req, env);
     if (path[1] === "dev-login" && method === "POST") {
       if (!canUseDevLogin(process.env.NODE_ENV, env.APP_ENV, env.DEV_LOGIN))
         fail(404, "not_found", "利用できません");
@@ -257,6 +258,11 @@ async function handle(req: Request): Promise<Response> {
       remaining: Math.max(0, 10 - (await usage())),
       period: state,
       offline: !env.GEMINI_API_KEY,
+      dev_login_enabled: canUseDevLogin(
+        process.env.NODE_ENV,
+        env.APP_ENV,
+        env.DEV_LOGIN,
+      ),
     });
   }
   if (path[0] === "images" && method === "GET") {
@@ -540,6 +546,7 @@ async function handle(req: Request): Promise<Response> {
     return json({ ok: true });
   }
   if (path[0] === "map" && method === "GET") {
+    if (state.purged) return json(null);
     const m = await one("SELECT * FROM map WHERE key='current'");
     return json(m ? { ...m, url: "/api/images/" + m.image_key } : null);
   }
@@ -569,6 +576,14 @@ async function handle(req: Request): Promise<Response> {
               "SELECT count(*) AS n FROM posts WHERE place_id=? AND status='published'",
               p.id,
             ))!.n,
+        pin_topic: state.purged
+          ? null
+          : (
+              await one(
+                "SELECT CASE WHEN topic IN ('recommend','tip') THEN topic ELSE NULL END AS topic FROM posts WHERE place_id=? AND status='published' ORDER BY created_at DESC LIMIT 1",
+                p.id,
+              )
+            )?.topic,
         situation: age === "expired" ? null : { ...latest, freshness: age },
       });
     }
@@ -641,6 +656,12 @@ async function handle(req: Request): Promise<Response> {
         );
         return json({ ok: true });
       }
+    }
+    if (path[1] === "qr" && method === "GET") {
+      return json({
+        base_url: qrBaseUrl(env.APP_BASE_URL, url.origin),
+        places: await all("SELECT id,name FROM places WHERE is_active=1"),
+      });
     }
     if (path[1] === "places") {
       if (method === "GET")

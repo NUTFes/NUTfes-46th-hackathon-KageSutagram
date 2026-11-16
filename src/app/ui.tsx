@@ -2,13 +2,19 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { motion } from "framer-motion";
+import QRCode from "qrcode";
+import { motion, MotionConfig } from "framer-motion";
+import { parseAppOrigin } from "@/lib/app-origin";
 import { topics, hashtags } from "@/lib/domain";
 import { resize, imageHash, kageFilter } from "@/lib/canvas";
 type Row = Record<string, any>;
 function KiraScore({ score }: { score: number }) {
   const [count, setCount] = useState(0);
   useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setCount(score);
+      return;
+    }
     let frame = 0;
     const start = performance.now();
     const tick = (now: number) => {
@@ -19,12 +25,153 @@ function KiraScore({ score }: { score: number }) {
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, [score]);
-  return <h2>キラキラ度 {count} / 100</h2>;
+  return (
+    <h2 className="kira-score" aria-label={`キラキラ度 ${score}`}>
+      ✦ {count}
+    </h2>
+  );
 }
 
+function Chips({
+  name,
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  name: string;
+  label: string;
+  options: [string, string][];
+  value?: string;
+  onChange?: (value: string) => void;
+}) {
+  const [selected, setSelected] = useState(value ?? options[0][0]);
+  useEffect(() => {
+    if (value !== undefined) setSelected(value);
+  }, [value]);
+  return (
+    <fieldset className="chip-field">
+      <legend>{label}</legend>
+      <select
+        hidden
+        tabIndex={-1}
+        aria-hidden="true"
+        aria-label={label}
+        name={name}
+        value={selected}
+        onChange={(e) => {
+          setSelected(e.target.value);
+          onChange?.(e.target.value);
+        }}
+      >
+        {options.map(([k, v]) => (
+          <option key={k} value={k}>
+            {v}
+          </option>
+        ))}
+      </select>
+      <div className="chips">
+        {options.map(([k, v]) => (
+          <button
+            type="button"
+            className="chip"
+            aria-pressed={selected === k}
+            key={k}
+            onClick={() => {
+              setSelected(k);
+              onChange?.(k);
+            }}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+function PrintableQR({ data }: { data: Row }) {
+  const [codes, setCodes] = useState<
+    { name: string; url: string; image: string }[]
+  >([]);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    setCodes([]);
+    setError("");
+    if (!data.base_url) return;
+    let base: string;
+    try {
+      base = parseAppOrigin(data.base_url);
+    } catch {
+      setError("QRコードのURLが不正です。運営にお問い合わせください。");
+      return;
+    }
+    Promise.all(
+      [
+        { name: "陰スタグラム", path: "/" },
+        ...(data.places || []).map((p: Row) => ({
+          name: p.name,
+          path: "/places/" + encodeURIComponent(p.id),
+        })),
+      ].map(async (p) => ({
+        name: p.name,
+        url: base + p.path,
+        image: await QRCode.toDataURL(base + p.path, {
+          width: 320,
+          margin: 4,
+          errorCorrectionLevel: "M",
+        }),
+      })),
+    )
+      .then((c) => {
+        if (active) setCodes(c);
+      })
+      .catch(() => {
+        if (active) setError("QRコードを生成できませんでした。");
+      });
+    return () => {
+      active = false;
+    };
+  }, [data]);
+  return (
+    <section className="qr-page">
+      <h2>会場に置くQRコード</h2>
+      <p>印刷して、模擬店や企画の入口に置いてください。</p>
+      <button className="primary no-print" onClick={() => window.print()}>
+        印刷する
+      </button>
+      {error && <p role="alert">{error}</p>}
+      <div className="qr-grid">
+        {codes.map((c) => (
+          <article className="qr-card" key={c.url}>
+            <h3>{c.name}</h3>
+            <img src={c.image} alt={c.name + "へのQRコード"} />
+            <p>飾らない一コマを、ここから。</p>
+            <a href={c.url}>{c.url}</a>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+function timeAgo(value: string) {
+  const n = Math.max(0, Math.floor((Date.now() - Date.parse(value)) / 60000));
+  return n < 60
+    ? n + "分前"
+    : n < 1440
+      ? Math.floor(n / 60) + "時間前"
+      : Math.floor(n / 1440) + "日前";
+}
 // 写真は端末のメモリだけに保持し、画面遷移後も判定結果を引き継ぐ。
 let postDraft: { original: Blob; filtered: Blob; judge: Row } | null = null;
 export default function App() {
+  return (
+    <MotionConfig reducedMotion="user">
+      <AppContent />
+    </MotionConfig>
+  );
+}
+function AppContent() {
   const pathname = usePathname();
   const params = useSearchParams();
   const router = useRouter();
@@ -86,7 +233,9 @@ export default function App() {
       else if (pathname.startsWith("/p/"))
         value = await request("posts/" + pathname.split("/")[2]);
       else if (pathname.startsWith("/places/"))
-        value = await request("places/" + pathname.split("/")[2]);
+        value = await request(
+          "places/" + pathname.split("/")[2] + "?" + params.toString(),
+        );
       else if (pathname.startsWith("/tags/"))
         value = await request(
           "posts?tag=" +
@@ -136,6 +285,25 @@ export default function App() {
   function Card({ post: p }: { post: Row }) {
     return (
       <article className="card">
+        <div className="post-head">
+          <span className="avatar" aria-hidden="true">
+            {p.nickname?.slice(0, 1)}
+          </span>
+          <div className="post-identity">
+            <Link href={"/u/" + p.public_id}>{p.nickname}</Link>
+            <div className="post-meta">
+              {p.place_id && (
+                <Link href={"/places/" + p.place_id}>
+                  📍 {places.find((x) => x.id === p.place_id)?.name || "会場"}
+                </Link>
+              )}{" "}
+              ・ {timeAgo(p.created_at)}
+            </div>
+          </div>
+          <span className="badge">
+            {topics[p.topic as keyof typeof topics]}
+          </span>
+        </div>
         <Link href={"/p/" + p.id}>
           <img
             className="photo"
@@ -144,20 +312,11 @@ export default function App() {
           />
         </Link>
         <div className="card-body">
-          <Link href={"/u/" + p.public_id}>{p.nickname}</Link>
-          <span className="badge">
-            {topics[p.topic as keyof typeof topics]}
-          </span>
-          <p>{tagText(p.caption)}</p>
-          {p.place_id && (
-            <Link href={"/places/" + p.place_id}>
-              {places.find((x) => x.id === p.place_id)?.name || "場所を見る"}
-            </Link>
-          )}
-          <p className="muted">
-            キラキラ度 {p.kira_score} / 100 · {p.kira_reason}
-          </p>
-          <meter min="0" max="100" value={p.kira_score} />
+          <p className="caption">{tagText(p.caption)}</p>
+          <div className="kira-row">
+            <strong>✦ キラキラ度 {p.kira_score}</strong>
+            <span>{p.kira_reason}</span>
+          </div>
           <div className="actions">
             {p.is_owner ? (
               <span>♡ 数は見えません</span>
@@ -189,7 +348,6 @@ export default function App() {
             )}
             <Link href={"/p/" + p.id}>返信 {p.reply_count}</Link>
           </div>
-          <small>{new Date(p.created_at).toLocaleString("ja-JP")}</small>
         </div>
       </article>
     );
@@ -249,7 +407,7 @@ export default function App() {
             <Link
               className={
                 "pin " +
-                (p.situation?.topic || "") +
+                (p.situation?.topic || p.pin_topic || "") +
                 " " +
                 (p.situation?.freshness || "")
               }
@@ -269,14 +427,19 @@ export default function App() {
               }}
               aria-label={p.name}
             >
-              {i + 1}
-              <small>{p.post_count}</small>
+              <span aria-hidden="true">{i + 1}</span>
             </Link>
           ))}
         </div>
       </div>
     ) : (
-      <p>マップを読み込み中…</p>
+      <p className="notice">
+        {me?.period.purged
+          ? "会場マップの公開は終了しました。"
+          : me
+            ? "会場マップは準備中です。"
+            : "マップを読み込み中…"}
+      </p>
     );
   }
   const [selected, setSelected] = useState<Blob | null>(
@@ -306,75 +469,83 @@ export default function App() {
   const isAdmin = pathname.startsWith("/admin/");
   return (
     <>
-      <header>
+      <header className="site-header">
         <Link href="/" className="brand">
-          陰スタグラム <small>KageSutagram</small>
+          <svg className="brand-icon" viewBox="0 0 36 36" aria-hidden="true">
+            <path d="M5 10h6l3-4h8l3 4h6v17H5z" />
+            <circle cx="18" cy="18" r="6" />
+            <path className="shadow-arc" d="M7 31q11 7 22-1" />
+          </svg>
+          <span>陰スタグラム</span>
         </Link>
-        <p>キラキラは、ぜんぶ陰にする。</p>
+        <span className="festival-day">
+          技大祭 {me?.period.open ? "開催中" : "期間限定"}
+        </span>
       </header>
-      <main>
+      <main className={isAdmin ? "admin-main" : ""}>
         <div role="alert" className={error ? "error" : ""}>
           {error}
         </div>
         {me?.period.purged && <h2>今年の陰スタグラムは終了しました</h2>}
         {!me?.period.open && !me?.period.purged && me && (
           <p className="notice">
-            投稿期間外です。投稿締切：{me.period.post_deadline}
+            {me.period.before
+              ? "技大祭の開催まで、もう少し。投稿は開催日から楽しめます。"
+              : "今年の投稿受付は終了しました。思い出は引き続きご覧いただけます。"}{" "}
+            投稿締切：{me.period.post_deadline}
           </p>
         )}
         {pathname === "/" && (
           <>
+            <p className="eyebrow">キラキラは、ぜんぶ陰にする。</p>
             <h1>会場の、飾らない一コマ</h1>
-            <form
-              className="filters"
-              onChange={(e) =>
-                router.push(
-                  "/?" +
-                    new URLSearchParams(
-                      Object.fromEntries(new FormData(e.currentTarget) as any),
-                    ).toString(),
-                )
-              }
-            >
-              <label>
-                並び順
-                <select name="sort" defaultValue={params.get("sort") || "new"}>
-                  <option value="new">新しい順</option>
-                  <option value="popular">人気順</option>
-                  <option value="kage">陰度順</option>
-                </select>
-              </label>
-              <label>
-                情報の種類
-                <select
-                  aria-label="情報の種類"
-                  name="topic"
-                  defaultValue={params.get("topic") || ""}
-                >
-                  <option value="">すべて</option>
-                  {Object.entries(topics).map(([k, v]) => (
-                    <option key={k} value={k}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </form>
+            <Chips
+              name="sort"
+              label="並び順"
+              options={[
+                ["new", "新しい"],
+                ["popular", "人気"],
+                ["kage", "陰度"],
+              ]}
+              value={params.get("sort") || "new"}
+              onChange={(v) => {
+                const q = new URLSearchParams(params);
+                q.set("sort", v);
+                router.push("/?" + q);
+              }}
+            />
+            <Chips
+              name="topic"
+              label="情報の種類"
+              options={[["", "すべて"], ...Object.entries(topics)]}
+              value={params.get("topic") || ""}
+              onChange={(v) => {
+                const q = new URLSearchParams(params);
+                q.set("topic", v);
+                router.push("/?" + q);
+              }}
+            />
           </>
         )}
         {isPost && (
           <>
-            <h1>{judged ? "判定結果" : "写真を投稿する"}</h1>
-            <p>今日の残り {me?.remaining ?? "…"} / 10 枚</p>
-            <p className="notice">
-              写真は判定と加工のため
-              AI（Gemini）に送られます。顔はすべてぼかされます。元の写真は保存されません。
-              {me?.offline &&
-                "現在はオフラインのダミー判定です。顔枠もダミーです。"}
-            </p>
-            <p className="muted">
-              合言葉はこのブラウザに保存します。ブラウザを変えると自分の投稿を削除できません。
-            </p>
+            <div className="page-heading">
+              <h1>{judged ? "判定結果" : "写真を投稿する"}</h1>
+              <span className="muted">残り {me?.remaining ?? "…"} / 10 枚</span>
+            </div>
+            {!judged && (
+              <>
+                <p className="notice">
+                  写真は判定と加工のため
+                  AI（Gemini）に送られます。顔はすべてぼかされます。元の写真は保存されません。
+                  {me?.offline &&
+                    "現在はオフラインのダミー判定です。顔枠もダミーです。"}
+                </p>
+                <p className="muted">
+                  合言葉はこのブラウザに保存します。ブラウザを変えると自分の投稿を削除できません。
+                </p>
+              </>
+            )}
             {!judged ? (
               <form
                 onSubmit={(e) => {
@@ -428,8 +599,8 @@ export default function App() {
                     }
                   />
                 </label>
-                <label>
-                  写真を選ぶ
+                <label className="photo-picker">
+                  <span aria-hidden="true">＋</span> 写真を選ぶ
                   <input
                     type="file"
                     accept="image/*"
@@ -443,6 +614,13 @@ export default function App() {
                         });
                     }}
                   />
+                  {preview && (
+                    <img
+                      className="photo picker-preview"
+                      src={preview}
+                      alt="選択した写真（端末内のみ）"
+                    />
+                  )}
                 </label>
                 <label>
                   一言（40字まで）
@@ -474,6 +652,19 @@ export default function App() {
                       ))}
                   </select>
                 </label>
+                <div className="chips" aria-label="場所の候補">
+                  {places.slice(0, 4).map((p) => (
+                    <button
+                      type="button"
+                      className="chip"
+                      aria-pressed={postPlace === p.id}
+                      key={p.id}
+                      onClick={() => setPostPlace(p.id)}
+                    >
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
                 <label>
                   場所名を検索
                   <input
@@ -485,30 +676,68 @@ export default function App() {
                   <summary>マップから場所を選ぶ</summary>
                   <MapView onPlace={setPostPlace} />
                 </details>
-                <label>
-                  情報の種類
-                  <select aria-label="情報の種類" name="topic">
-                    {Object.entries(topics).map(([k, v]) => (
-                      <option key={k} value={k}>
-                        {v}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <Chips
+                  name="topic"
+                  label="情報の種類"
+                  options={Object.entries(topics)}
+                />
+
                 <button
                   disabled={
                     busy || !selected || !me?.period.open || me?.remaining === 0
                   }
                 >
-                  判定する
+                  キラキラ度を測る
                 </button>
               </form>
             ) : (
-              <section>
+              <section className="result-panel">
                 <KiraScore score={judged.kira_score} />
-                <p>{judged.kira_reason}</p>
+                <p className="result-reason">{judged.kira_reason}</p>
+                <div className="comparison">
+                  <figure>
+                    <figcaption>加工前（端末内のみ）</figcaption>
+                    <img
+                      className="photo"
+                      src={beforePreview || undefined}
+                      alt="加工前の写真（端末内のみ）"
+                    />
+                  </figure>
+                  <figure>
+                    <figcaption>陰にしたあと</figcaption>
+                    <div className="result-image">
+                      <motion.img
+                        className="photo"
+                        src={preview || undefined}
+                        alt="陰フィルター適用後の写真"
+                        initial={{ filter: "saturate(1.8) brightness(1.3)" }}
+                        animate={{ filter: "saturate(1) brightness(1)" }}
+                        transition={{ duration: 1.2 }}
+                      />
+                      <motion.div
+                        className="grain"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 0.18 }}
+                        transition={{ duration: 1.2 }}
+                      />
+                      {beforePreview && (
+                        <motion.img
+                          className="photo before-image"
+                          src={beforePreview}
+                          alt=""
+                          initial={{ opacity: 1 }}
+                          animate={{ opacity: 0 }}
+                          transition={{ duration: 1.2 }}
+                        />
+                      )}
+                    </div>
+                  </figure>
+                </div>
                 <button
-                  disabled={busy || !filtered}
+                  className="primary"
+                  disabled={
+                    busy || !filtered || !me?.period.open || me?.remaining === 0
+                  }
                   onClick={() =>
                     action(async () => {
                       const f = new FormData();
@@ -526,7 +755,7 @@ export default function App() {
                     })
                   }
                 >
-                  投稿する
+                  このまま投稿する
                 </button>
                 <button
                   onClick={() => {
@@ -542,36 +771,46 @@ export default function App() {
               </section>
             )}
             <p aria-live="polite">{stage}</p>
-            {preview && (
-              <div className="result-image">
-                <img className="photo" src={preview} alt="端末内のプレビュー" />
-                {filtered && beforePreview && (
-                  <motion.img
-                    key={preview}
-                    className="photo before-image"
-                    src={beforePreview}
-                    alt="陰化前の写真（端末内のみ）"
-                    initial={{ opacity: 1 }}
-                    animate={{ opacity: 0 }}
-                    transition={{ duration: 1.5 }}
-                  />
-                )}
-              </div>
-            )}
           </>
         )}
         {pathname === "/map" && (
           <>
             <h1>会場マップ</h1>
             <p>
-              地図はピンチで拡大できます。混雑は赤、状況は灰色。30分を過ぎた情報は薄く、2時間を過ぎると地図から外します。
+              ピンを押すと、いまの会場の様子がわかります。地図はピンチで拡大できます。
             </p>
             <MapView />
+            <div className="legend">
+              <span>
+                <i className="dot crowd" />
+                混雑
+              </span>
+              <span>
+                <i className="dot status" />
+                売り切れ
+              </span>
+              <span>
+                <i className="dot recommend" />
+                おすすめ・穴場
+              </span>
+              <span>
+                <i className="dot" />
+                情報なし
+              </span>
+            </div>
+            <p className="muted">
+              30分前から薄く表示。2時間で状況の表示を終了。
+            </p>
             {mapPlace && (
-              <aside className="notice" aria-label="場所の要約">
+              <aside className="map-sheet" aria-label="場所の要約">
+                <span className="sheet-handle" aria-hidden="true" />
                 <h2>{mapPlace.name}</h2>
                 <p>{mapPlace.description}</p>
-                <p>{mapPlace.post_count}件の投稿</p>
+                <span className="badge">
+                  {mapPlace.situation
+                    ? topics[mapPlace.situation.topic as keyof typeof topics]
+                    : "最近の状況なし"}
+                </span>
                 {mapPlace.situation && (
                   <p className={mapPlace.situation.freshness}>
                     {mapPlace.situation.caption} ·{" "}
@@ -583,7 +822,7 @@ export default function App() {
                   </p>
                 )}
                 <Link href={"/places/" + mapPlace.id}>
-                  この場所の投稿を見る
+                  投稿 {mapPlace.post_count}件 →
                 </Link>
                 <button onClick={() => setMapPlace(null)}>閉じる</button>
               </aside>
@@ -610,16 +849,34 @@ export default function App() {
           <>
             <h1>{data.place.name}</h1>
             <p>{data.place.description}</p>
-            {data.place.situation && (
-              <p className={data.place.situation.freshness}>
-                {data.place.situation.caption} ·{" "}
-                {Math.floor(
-                  (Date.now() - Date.parse(data.place.situation.created_at)) /
-                    60000,
-                )}
-                分前
-              </p>
-            )}
+            <section className="situation">
+              <h2>いまの状況</h2>
+              {!data.place.situation && (
+                <p className="muted">最近の状況はまだ届いていません。</p>
+              )}
+              {data.place.situation && (
+                <p className={data.place.situation.freshness}>
+                  <i className={"dot " + data.place.situation.topic} />
+                  {data.place.situation.caption} ·{" "}
+                  {Math.floor(
+                    (Date.now() - Date.parse(data.place.situation.created_at)) /
+                      60000,
+                  )}
+                  分前
+                </p>
+              )}
+            </section>
+            <Chips
+              name="sort"
+              label="並び順"
+              options={[
+                ["new", "新しい"],
+                ["popular", "人気"],
+                ["kage", "陰度"],
+              ]}
+              value={params.get("sort") || "new"}
+              onChange={(v) => router.push(pathname + "?sort=" + v)}
+            />
           </>
         )}
         {pathname.startsWith("/tags/") && (
@@ -734,14 +991,27 @@ export default function App() {
               <Link href="/admin/reports">通報</Link>
               <Link href="/admin/places">場所・マップ</Link>
               <Link href="/admin/settings">開催期間</Link>
+              <Link href="/admin/qr">印刷用QR</Link>
               <Link href="/admin/login">ログイン</Link>
             </nav>
+            {pathname === "/admin/qr" && <PrintableQR data={data} />}
             {pathname === "/admin/login" && (
               <>
-                <form action="/api/auth/dev-login" method="post">
-                  <button>開発ログイン</button>
-                </form>
-                <a href="/api/auth/slack/login">Slackでログイン（準備中）</a>
+                {params.get("error") && (
+                  <p className="notice" role="alert">
+                    {params.get("error") === "slack_config"
+                      ? "Slackログインの設定が未完了です。運営にお問い合わせください。"
+                      : params.get("error") === "unregistered"
+                        ? "このSlackアカウントは運営に登録されていません。"
+                        : "Slackログインを確認できませんでした。もう一度お試しください。"}
+                  </p>
+                )}
+                {me?.dev_login_enabled === true && (
+                  <form action="/api/auth/dev-login" method="post">
+                    <button>開発ログイン</button>
+                  </form>
+                )}
+                <a href="/api/auth/slack/login">Slackでログイン</a>
               </>
             )}
             {pathname === "/admin/reports" &&
@@ -931,13 +1201,34 @@ export default function App() {
         <Link href="/admin/login">運営ログイン</Link>
         <p>技大祭期間限定の、映えないSNS。</p>
       </footer>
-      <nav className="bottom">
-        <Link href="/">タイムライン</Link>
-        <Link href="/map">マップ</Link>
-        <Link href="/post" aria-disabled={!!me && !me.period.open}>
-          ＋投稿
-        </Link>
-        <Link href="/me">自分</Link>
+      <nav className="bottom" aria-label="メインナビゲーション">
+        {[
+          ["/", "☰", "タイムライン"],
+          ["/map", "◎", "マップ"],
+          ["/post", "＋", "投稿"],
+          ["/me", "◐", "自分"],
+        ].map(([href, icon, label]) =>
+          href === "/post" && !!me && !me.period.open ? (
+            <span key={href} className="nav-post" aria-disabled="true">
+              <span aria-hidden="true">{icon}</span>
+              {label}
+            </span>
+          ) : (
+            <Link
+              key={href}
+              href={href}
+              className={href === "/post" ? "nav-post" : ""}
+              aria-current={
+                (href === "/" ? pathname === "/" : pathname.startsWith(href))
+                  ? "page"
+                  : undefined
+              }
+            >
+              <span aria-hidden="true">{icon}</span>
+              {label}
+            </Link>
+          ),
+        )}
       </nav>
     </>
   );
