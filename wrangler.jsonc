@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kagesutagram",
+  "main": "worker.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "kagesutagram-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "drizzle",
+    },
+  ],
+  "r2_buckets": [
+    { "binding": "IMAGES", "bucket_name": "kagesutagram-images-local" },
+  ],
+  "vars": {
+    "DEV_LOGIN": "0",
+    "APP_ENV": "production",
+    "STATUS_FRESH_MIN": "30",
+    "STATUS_STALE_MIN": "120",
+  },
+  "triggers": { "crons": ["0 19 * * *"] },
+}

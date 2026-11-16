@@ -1,0 +1,44 @@
+{
+  "name": "kagesutagram",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.23.0",
+  "scripts": {
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
+    "build:worker": "opennextjs-cloudflare build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply kagesutagram-local --local",
+    "db:seed": "tsx scripts/seed.ts",
+    "cleanup:local": "tsx scripts/cleanup.ts",
+    "smoke": "node scripts/smoke.cjs"
+  },
+  "dependencies": {
+    "@opennextjs/cloudflare": "^1.0.0",
+    "drizzle-orm": "^0.44.0",
+    "framer-motion": "^14.14.0",
+    "jpeg-js": "^0.4.4",
+    "next": "^16.0.0",
+    "pngjs": "^7.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260702.1",
+    "@tailwindcss/postcss": "^4.1.17",
+    "@types/node": "^22.19.0",
+    "@types/pngjs": "^6.0.5",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "drizzle-kit": "^0.31.0",
+    "prettier": "^3.10.1",
+    "tailwindcss": "^4.1.17",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.13",
+    "wrangler": "^4.0.0"
+  }
+}

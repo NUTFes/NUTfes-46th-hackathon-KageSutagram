@@ -1,0 +1,5 @@
+DEV_LOGIN=1
+APP_ENV=local
+SESSION_SECRET=local-kage-session-secret-change-before-deploy-32
+DEVICE_ID_SECRET=local-kage-device-secret-change-before-deploy-32
+GEMINI_MODEL=gemini-2.5-flash
