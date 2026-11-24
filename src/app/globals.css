@@ -738,3 +738,6 @@ input[type="checkbox"] {
 .admin-main > form {
   margin-top: 24px;
 }
+
+.demo-badge{display:inline-block;padding:.1em .55em;border:1px solid currentColor;border-radius:4px;font-size:.75rem;font-weight:700}
+.demo-login{margin-top:1rem;padding:1rem;border:1px solid currentColor;border-radius:6px}

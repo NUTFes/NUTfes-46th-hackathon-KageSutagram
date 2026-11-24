@@ -478,6 +478,7 @@ function AppContent() {
           </svg>
           <span>陰スタグラム</span>
         </Link>
+        {me?.demo_mode && <span className="demo-badge">DEMO</span>}
         <span className="festival-day">
           技大祭 {me?.period.open ? "開催中" : "期間限定"}
         </span>
@@ -1006,7 +1007,16 @@ function AppContent() {
                         : "Slackログインを確認できませんでした。もう一度お試しください。"}
                   </p>
                 )}
-                {me?.dev_login_enabled === true && (
+                {me?.demo_mode === true && (
+                  <form className="demo-login" action="/api/auth/dev-login" method="post">
+                    <h2>デモ用ログイン</h2>
+                    <p>動作確認用のデモです。データはすべて架空です</p>
+                    <label>パスコード<input type="password" name="passcode" autoComplete="current-password" required /></label>
+                    <label>運営<select name="admin_id" required><option value="sample-admin">架空・運営あおい</option></select></label>
+                    <button>この運営でログイン</button>
+                  </form>
+                )}
+                {!me?.demo_mode && me?.dev_login_enabled === true && (
                   <form action="/api/auth/dev-login" method="post">
                     <button>開発ログイン</button>
                   </form>

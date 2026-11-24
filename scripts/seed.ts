@@ -1,15 +1,30 @@
 import { getPlatformProxy } from "wrangler";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import { demoSeed } from "./demo-seed";
 import { PNG } from "pngjs";
 import jpeg from "jpeg-js";
 import { sha256, publicId, jstDate } from "../src/lib/domain";
-const { env, dispose } = await getPlatformProxy<CloudflareEnv>({
+const demo = process.argv.includes("--demo-sql") ? demoSeed() : undefined;
+const platform = demo ? undefined : await getPlatformProxy<CloudflareEnv>({
   persist: { path: ".wrangler/state/v3" },
 });
+const manifest: string[] = [];
+async function put(key: string, bytes: Buffer, contentType: string) {
+  if (platform) {
+    await platform.env.IMAGES.put(key, bytes, { httpMetadata: { contentType } });
+  } else {
+    const file = "demo/r2/" + key;
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, bytes);
+    manifest.push([key, file, contentType].join("\t"));
+  }
+}
 try {
-  const run = (sql: string, ...args: (string | number | null)[]) =>
-    env.DB.prepare(sql)
-      .bind(...args)
-      .run();
+  const run = async (sql: string, ...args: (string | number | null)[]) => {
+    if (demo) demo.add(sql, args);
+    else await platform!.env.DB.prepare(sql).bind(...args).run();
+  };
   const now = new Date();
   const date = (d: number) => jstDate(new Date(now.getTime() + d * 86400000));
   await run(
@@ -35,9 +50,7 @@ try {
       map.data[i + 2] = road ? 231 : 179;
       map.data[i + 3] = 255;
     }
-  await env.IMAGES.put("map/sample.png", PNG.sync.write(map), {
-    httpMetadata: { contentType: "image/png" },
-  });
+  await put("map/sample.png", PNG.sync.write(map), "image/png");
   await run(
     "INSERT OR IGNORE INTO map VALUES ('current','map/sample.png',1000,750)",
   );
@@ -70,7 +83,7 @@ try {
     await run(
       "INSERT OR IGNORE INTO devices VALUES (?,?,?,?)",
       device,
-      await publicId(device, env.DEVICE_ID_SECRET || ""),
+      await publicId(device, demo ? "seed-fixture-device-ids-not-a-secret" : platform!.env.DEVICE_ID_SECRET || ""),
       ["木陰", "すみっこ", "灰色", "夕暮れ"][i],
       now.toISOString(),
     );
@@ -100,9 +113,7 @@ try {
         image.data[p + 2] = v + 17;
         image.data[p + 3] = 255;
       }
-    await env.IMAGES.put(key, jpeg.encode(image, 80).data, {
-      httpMetadata: { contentType: "image/jpeg" },
-    });
+    await put(key, jpeg.encode(image, 80).data, "image/jpeg");
     await run(
       "INSERT OR IGNORE INTO posts(id,device_id,nickname,caption,place_id,topic,image_key,width,height,kira_score,kira_reason,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
       id,
@@ -120,7 +131,7 @@ try {
     );
     const tag = ["技大祭", "屋台", "おすすめ", "穴場", "技大祭"][i % 5];
     await run(
-      "INSERT INTO hashtags SELECT ?,?,NULL,? WHERE NOT EXISTS(SELECT 1 FROM hashtags WHERE tag=? AND post_id=?)",
+      "INSERT OR IGNORE INTO hashtags SELECT ?,?,NULL,? WHERE NOT EXISTS(SELECT 1 FROM hashtags WHERE tag=? AND post_id=?)",
       tag,
       id,
       now.toISOString(),
@@ -155,9 +166,13 @@ try {
       now.toISOString(),
     );
   }
+  if (demo) {
+    await demo.write();
+    await writeFile("demo/r2-manifest.txt", manifest.join("\n") + "\n");
+  }
   console.log(
     "架空の場所12件、陰化済み写真20件、返信・ハート・通報、開催期間、運営を用意しました",
   );
 } finally {
-  await dispose();
+  await platform?.dispose();
 }

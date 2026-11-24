@@ -1,3 +1,4 @@
+import { checkDemoPasscode, demoLoginError, demoPasscode } from "./demo-login";
 import { handleSlackAuth } from "./slack-auth";
 import { qrBaseUrl } from "./app-origin";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
@@ -67,6 +68,7 @@ export async function api(request: Request) {
 async function handle(req: Request): Promise<Response> {
   const { env } = await getCloudflareContext({ async: true });
   const db = env.DB;
+  const passcode = demoPasscode(env);
   const url = new URL(req.url),
     path = decodeURIComponent(url.pathname).split("/").filter(Boolean).slice(1),
     method = req.method,
@@ -217,10 +219,21 @@ async function handle(req: Request): Promise<Response> {
     )
       return handleSlackAuth(req, env);
     if (path[1] === "dev-login" && method === "POST") {
-      if (!canUseDevLogin(process.env.NODE_ENV, env.APP_ENV, env.DEV_LOGIN))
+      if (!passcode && !canUseDevLogin(process.env.NODE_ENV, env.APP_ENV, env.DEV_LOGIN))
         fail(404, "not_found", "利用できません");
+      let adminId: unknown;
+      if (passcode) {
+        const fields = req.headers.get("content-type")?.includes("application/json")
+          ? await req.json() as Record<string, unknown> | null
+          : req.headers.get("content-type") ? Object.fromEntries(await req.formData()) : null;
+        const status = await checkDemoPasscode(db, req, passcode, fields?.passcode);
+        if (status !== 200) fail(status, status === 429 ? "rate_limited" : "invalid_passcode", demoLoginError(status));
+        adminId = fields?.admin_id;
+      }
       const id = crypto.randomUUID();
-      const a = await one("SELECT * FROM admins WHERE is_active=1 LIMIT 1");
+      const a = passcode
+        ? await one("SELECT id FROM admins WHERE is_active=1 AND id=? AND slack_user_id='FAKE_ADMIN'", typeof adminId === "string" ? adminId : "")
+        : await one("SELECT * FROM admins WHERE is_active=1 LIMIT 1");
       if (!a) fail(401, "admin", "運営が未登録です");
       await run(
         "INSERT INTO sessions VALUES (?,?,?)",
@@ -258,6 +271,7 @@ async function handle(req: Request): Promise<Response> {
       remaining: Math.max(0, 10 - (await usage())),
       period: state,
       offline: !env.GEMINI_API_KEY,
+      demo_mode: Boolean(passcode),
       dev_login_enabled: canUseDevLogin(
         process.env.NODE_ENV,
         env.APP_ENV,
