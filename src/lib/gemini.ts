@@ -34,7 +34,7 @@ export async function judge(
     });
   }
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_MODEL || "gemini-2.5-flash"}:generateContent`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_MODEL || "gemini-3.8-flash"}:generateContent`,
     {
       method: "POST",
       headers: {
@@ -100,7 +100,7 @@ export async function judge(
 export async function checkReply(env: CloudflareEnv, text: string) {
   if (!env.GEMINI_API_KEY) return !blocked(text);
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_MODEL || "gemini-2.5-flash"}:generateContent`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_MODEL || "gemini-3.8-flash"}:generateContent`,
     {
       method: "POST",
       headers: {
