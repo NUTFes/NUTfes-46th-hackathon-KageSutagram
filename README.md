@@ -109,3 +109,35 @@ SlackアプリにはOIDCのリダイレクトURL `{APP_BASE_URL}/api/auth/slack/
 配色はTask 08のトークンを使用し、16px余白、投稿カード、選択チップ、カメラロゴ、下部ナビ、地図の状況ピンとシートを適用しています。ピンの見た目は18px、操作領域は44pxです。古い状況は薄く表示し、おすすめ/穴場はmint、売り切れはsoldout、混雑はcrowdです。投稿画面では場所・情報の種類をチップで選べます。結果は加工前（端末内のみ）と加工後を並べ、約1.2秒で彩度と粒子が変化します。
 
 スモークが `.wrangler/verification/S-01-timeline-375.png`、`S-02-post-375.png`、`S-03-result-375.png`、`S-05-map-375.png`、`S-06-place-375.png` と `admin-qr-print.png` を保存します。
+
+## デモ環境のセットアップ
+
+デモ専用の Cloudflare 環境に `SESSION_SECRET`（32文字以上）と `DEMO_PASSCODE`（16文字以上）を Worker のシークレットとして設定します。陰スタグラムには `DEVICE_ID_SECRET`（32文字以上）も必要です。デモ用ログインでは、シードで登録した架空アカウントを選べます。パスコードの入力を同じ IP から10分間に30回誤ると、最初の失敗から10分が経過するまでログインが制限されます。
+
+以下のコマンドはアプリのディレクトリで実行します。`<db>` はデモ専用の本番 D1 データベース名に置き換えてください。SQL の生成はローカルで行われ、再適用しても既存のシード行は維持されます。
+
+```sh
+pnpm demo:seed-sql
+pnpm exec wrangler d1 migrations apply <db> --remote
+pnpm exec wrangler d1 execute <db> --remote --file demo/seed.sql
+```
+
+
+`demo/r2-manifest.txt` は、R2 のキー、ファイルパス、Content-Type をタブで区切った一覧です。各行の値を使い、マップと投稿画像を本番 R2 にアップロードします。
+
+```sh
+pnpm exec wrangler r2 object put <bucket>/<key> --file <file> --content-type <type> --remote
+```
+
+ローカル D1 で SQL を検証する場合は、次のコマンドを使います。
+
+```sh
+pnpm exec wrangler d1 migrations apply kagesutagram-local --local --persist-to .wrangler/demo-check
+pnpm exec wrangler d1 execute kagesutagram-local --local --persist-to .wrangler/demo-check --file demo/seed.sql
+```
+
+## デモ用ログインの注意
+
+- `DEMO_PASSCODE` は、本番とは別のデモ専用の Worker・D1 にだけ設定する。Slack ログインの設定（`SLACK_*`）がある環境には入れない（架空の責任者・編集部が、本物のユーザーに権限を付けられてしまうため）
+- パスコードはランダムな文字列にする（例：`openssl rand -base64 24`）
+- 本番に移るときは `DEMO_PASSCODE` を削除し、`FAKE_` で始まる架空データを D1 から消す
