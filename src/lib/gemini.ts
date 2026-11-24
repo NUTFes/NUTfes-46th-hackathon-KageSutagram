@@ -1,4 +1,7 @@
 import { blocked, parseJudge } from "./domain";
+// 秘密の値の前後に付いた BOM・空白・改行を取り除く（PowerShell の Get-Clipboard 経由で登録すると BOM が付くため）
+export const geminiKey = (env: { GEMINI_API_KEY?: string }) =>
+  (env.GEMINI_API_KEY ?? "").replace(/^﻿/, "").trim();
 export async function judge(
   env: CloudflareEnv,
   image: { data: Uint8Array },
@@ -36,7 +39,7 @@ export async function judge(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-goog-api-key": env.GEMINI_API_KEY,
+        "x-goog-api-key": geminiKey(env),
       },
       body: JSON.stringify({
         contents: [
@@ -102,7 +105,7 @@ export async function checkReply(env: CloudflareEnv, text: string) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-goog-api-key": env.GEMINI_API_KEY,
+        "x-goog-api-key": geminiKey(env),
       },
       body: JSON.stringify({
         contents: [
